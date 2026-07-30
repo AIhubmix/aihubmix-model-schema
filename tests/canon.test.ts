@@ -186,6 +186,19 @@ describe('verdict 取哪条轴：默认 aihubmix，且这是有数据支撑的�
     expect(p.official?.source).toBeTruthy();
   });
 
+  it('字段级出处单独给，不与能力级的 verdict 出处混在一起', () => {
+    // 展示面要的是**字段自己**那条 quote:canon 的 description 只有中文,
+    // 双语站点的英文侧只能靠厂商英文原话。两条 official 语义不同,不能合并。
+    const mt = canonParams(opus, 'messages').find((p) => p.path === 'max_tokens')!;
+    expect(mt.fieldOfficial?.quote, 'max_tokens 在真数据里有厂商原话').toContain(
+      'maximum number of tokens',
+    );
+    expect(mt.fieldOfficial?.source).toContain('http');
+    // 覆盖率不满是常态(实测 12/25),拿不到就该是 undefined,不许拿能力级的顶上。
+    const noQuote = canonParams(opus, 'messages').filter((p) => !p.fieldOfficial?.quote);
+    expect(noQuote.length, '真数据里就该有一批字段没有 quote').toBeGreaterThan(0);
+  });
+
   it('显式切到 official 轴时结论翻面（对照视图用，不是日常路径）', () => {
     const p = canonParams(crossProtocol, 'responses', { axis: 'official' })[0];
     expect(p.verdict).toBe('not-applicable');

@@ -60,6 +60,11 @@ export interface CanonField {
   /** 'deprecated' 等。canon 标了废弃就不该再往面板上放。 */
   status?: string;
   override?: CanonFieldOverride;
+  /**
+   * **这个字段自己**的厂商出处（与 `CanonProtocolEntry.official` 那条 verdict 出处不是一回事）。
+   * `quote` 是厂商文档的英文原话，实测覆盖率 12/25（claude-opus-5）、13/62（gpt-5.6-sol）。
+   */
+  official?: { quote?: string; source?: string; fetched_at?: string };
 }
 
 export interface CanonVerdictSide {
@@ -143,8 +148,14 @@ export interface CanonParam {
   reason: CanonParamReason;
   /** 定可选性的那条 verdict（aihubmix 轴）。 */
   verdict: Verdict | null;
-  /** 厂商侧出处，随行展示用。 */
+  /** 厂商侧出处，随行展示用。这条是**能力×协议**级的（verdict 的依据）。 */
   official?: CanonVerdictSide;
+  /**
+   * **字段**级的厂商出处。与上面那条分开给，因为展示面要的是这条：
+   * `description` 只有中文，双语站点的英文侧只能拿 `fieldOfficial.quote`（厂商英文原话）来写说明。
+   * 覆盖率不满（约 20%~50%），拿不到就别编，留空。
+   */
+  fieldOfficial?: { quote?: string; source?: string; fetched_at?: string };
   override?: CanonFieldOverride;
 }
 
@@ -268,6 +279,7 @@ function paramsOfEntry(
       reason,
       verdict,
       official: entry.official,
+      fieldOfficial: f.official,
       override: f.override,
     });
   }

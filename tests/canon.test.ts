@@ -17,6 +17,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { CAPABILITY_PUTS } from '../src/catalog.js';
+import { generateFromCapabilities, type CapabilityResolver } from '../src/generate.js';
 import {
   NO_CANON_RESOLVER,
   canonEntry,
@@ -227,6 +229,71 @@ describe('canon 未覆盖的模型：今天 374/380 走的就是这条', () => {
       for (const proto of ['chat', 'messages', 'responses', 'gemini'] as const) {
         expect(NO_CANON_RESOLVER(cap, proto), `${cap}/${proto}`).toBeNull();
       }
+    }
+  });
+});
+
+describe('最基础对话形式：端到端（这是 374/380 个模型今天的产物）', () => {
+  const ALL_CAPS = CAPABILITY_PUTS.map((p) => p.key);
+
+  /** 三条会走到基础形式的路：canon 没这个模型、canon 有但该协议零字段、resolve 抛异常。 */
+  const PATHS: [string, CapabilityResolver][] = [
+    ['canon 未覆盖该模型', NO_CANON_RESOLVER],
+    ['canon 覆盖但该协议零字段', canonResolver(opus)], // opus 的 chat/responses/gemini
+    ['resolve 抛异常', () => { throw new Error('调用方的查表炸了'); }],
+  ];
+
+  for (const [label, resolve] of PATHS) {
+    it(`${label} → 不注入任何能力,但仍出一段能跑的请求`, () => {
+      for (const protocol of ['chat', 'responses', 'gemini'] as const) {
+        const r = generateFromCapabilities({
+          model: 'claude-opus-5', protocol, lang: 'curl',
+          capabilities: ALL_CAPS, baseUrl: 'https://aihubmix.com', resolve,
+        });
+        // 一条能力都不许落地 —— 查不到就不猜,这正是兜底的定义。
+        expect(r.used, `${label}/${protocol}`).toEqual([]);
+        // 但不是空产物:模型 + 一条用户消息必须在,否则页面上就是个空代码块。
+        expect(r.code, `${label}/${protocol}`).toContain('claude-opus-5');
+        expect(r.code, `${label}/${protocol}`).toContain('Hello');
+        // gemini 的模型 id 在 URL 路径里（/gemini/v1beta/models/{model}:generateContent）,
+        // 不在 body 里 —— 所以只对另外三个协议查 body。
+        if (protocol !== 'gemini') {
+          expect(JSON.stringify(r.body), `${label}/${protocol}`).toContain('claude-opus-5');
+        }
+        expect(r.code.length).toBeGreaterThan(50);
+        // 每条能力都得有说法,不能静默消失。
+        for (const cap of ALL_CAPS) expect(r.availability[cap], `${label}/${protocol}/${cap}`).toBeDefined();
+      }
+    });
+  }
+
+  it('resolve 抛异常只影响记账,不掀掉整次生成', () => {
+    const r = generateFromCapabilities({
+      model: 'gpt-4o', protocol: 'chat', lang: 'curl', capabilities: ALL_CAPS,
+      baseUrl: 'https://aihubmix.com', resolve: () => { throw new Error('boom'); },
+    });
+    expect(r.code).toContain('gpt-4o');
+    for (const cap of ALL_CAPS) expect(r.availability[cap].reason, cap).toBe('resolver-error');
+  });
+
+  it('兜底与 canon 命中走的是同一个 buildBody（没有第二份实现）', () => {
+    // 兜底路径最容易被写成「另拼一个简单 body」,那样「Get Code == 真实请求」就断了。
+    // 判据:两条路的 body 都带 model,且 code 里出现的就是 body 里的那个值。
+    const hit = generateFromCapabilities({
+      model: 'claude-opus-5', protocol: 'messages', lang: 'curl', capabilities: ALL_CAPS,
+      baseUrl: 'https://aihubmix.com', resolve: canonResolver(opus),
+    });
+    const miss = generateFromCapabilities({
+      model: 'claude-opus-5', protocol: 'messages', lang: 'curl', capabilities: ALL_CAPS,
+      baseUrl: 'https://aihubmix.com', resolve: NO_CANON_RESOLVER,
+    });
+    expect(hit.used.length).toBeGreaterThan(0);
+    expect(miss.used).toEqual([]);
+    for (const r of [hit, miss]) {
+      expect(r.body.model).toBe('claude-opus-5');
+      // messages 协议 max_tokens 是**必填**（Anthropic 硬要求），所以两条路都必须有它 ——
+      // 「基础形式 = 只有 model + messages」那句话在这个协议上做不到,也不该做到。
+      expect(r.body.max_tokens, 'messages 缺 max_tokens 会 400').toBeTypeOf('number');
     }
   });
 });

@@ -15,7 +15,26 @@
  * **本包也不读 canon**（isomorphic / 无网络）：verdict 由调用方经 resolve() 注入，这里只定语义。
  */
 
-/** canon 对「字段在本网关是否生效」的实测结论。 */
+/**
+ * canon 对「这个字段在这个协议上到底算不算数」的结论标签。
+ *
+ * **canon 有两条 verdict 轴，取值集合不一样**，这张表两条都覆盖：
+ *
+ *   - `aihubmix.verdict` —— AIHubMix 在**本网关**上实测出来的结论。取值：`tested-effective`
+ *     / `accepted-unverified` / `unverified` / `silent-degrade` / `rejected-or-unsupported`
+ *     / `not-applicable`。这条轴是**可选性的权威**：能不能勾、要不要划掉，看它。
+ *   - `official.verdict` —— 厂商自己的文档怎么说。取值：`official-model-level` / `spec-only`
+ *     / `unverified` / `not-applicable` / `rejected-or-unsupported` / `do-not-send`。这条轴是
+ *     **出处（provenance）**，配合同级的 `quote` / `source` 用来展示「凭什么这么说」。
+ *
+ * 两条轴共用 4 个取值、各有各的专属取值（aihubmix 独有 `tested-effective`、
+ * `accepted-unverified`、`silent-degrade`；official 独有 `official-model-level`、`spec-only`、
+ * `do-not-send`）。数量上 official 轴的 `official-model-level` 是整个 canon 里最常见的
+ * verdict —— 表里漏了它，调用方一旦按 official 轴传就会整片落进「未知 verdict」兜底。
+ *
+ * 厂商文档说支持 ≠ 本网关上生效（「HTTP 200 ≠ 生效」的同一条道理），所以 official 轴的两个
+ * 专属取值都只给到 `unverified` 这一档，不冒充 `ok`。要 `ok` 得有 aihubmix 轴的实测背书。
+ */
 export type Verdict =
   /** 实测生效：发了有可观测的行为差异。 */
   | 'tested-effective'
@@ -30,7 +49,11 @@ export type Verdict =
   /** 该协议上这条能力不适用（概念上就不存在，不是「支持不了」）。 */
   | 'not-applicable'
   /** 已知会把请求搞坏，别发。 */
-  | 'do-not-send';
+  | 'do-not-send'
+  /** 仅 official 轴：厂商文档明写这个模型在模型级别支持。文档背书，非本网关实测。 */
+  | 'official-model-level'
+  /** 仅 official 轴：字段写在 API 规范里，但厂商没针对这个模型确认过。 */
+  | 'spec-only';
 
 /** 能力可用性等级 —— UI 只把它映射成样式（正常 / 加标记 / 划掉）。 */
 export type CapLevel = 'ok' | 'unverified' | 'degraded' | 'unsupported';
@@ -100,6 +123,22 @@ export const VERDICT_POLICY: Record<Verdict, VerdictPolicy> = {
     note: 'warn',
     inCodeComment: false,
     text: 'Known to break the request on this protocol — do not send.',
+  },
+  // 以下两个只出现在 official 轴（厂商文档怎么说），不是本网关的实测结论 —— 所以最高只给
+  // 到 unverified。要 ok 得有 aihubmix 轴的 tested-effective 背书。
+  'official-model-level': {
+    selectable: true,
+    level: 'unverified',
+    note: 'info',
+    inCodeComment: false,
+    text: 'Documented by the vendor as supported at the model level; gateway behavior not separately verified.',
+  },
+  'spec-only': {
+    selectable: true,
+    level: 'unverified',
+    note: 'info',
+    inCodeComment: false,
+    text: 'Present in the vendor API spec, but not confirmed for this specific model.',
   },
 };
 

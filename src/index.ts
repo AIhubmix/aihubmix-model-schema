@@ -64,3 +64,25 @@ export {
   type CapabilityStatus,
   type FromCapabilitiesOpts,
 } from './generate.js';
+
+// ---- canon 投影 → 本包输入（纯解析，不取数） ----
+export {
+  NO_CANON_RESOLVER,
+  canonEntry,
+  canonParams,
+  canonProtocols,
+  canonResolver,
+  type CanonCapability,
+  type CanonDomain,
+  type CanonField,
+  type CanonFieldOverride,
+  type CanonIndex,
+  type CanonIndexEntry,
+  type CanonModelDoc,
+  type CanonParam,
+  type CanonParamReason,
+  type CanonProtocolEntry,
+  type CanonProtocolView,
+  type CanonReadOpts,
+  type CanonVerdictSide,
+} from './canon.js';

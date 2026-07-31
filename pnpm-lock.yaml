@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@aihubmix/codegen':
-        specifier: link:../aihubmix-codegen
-        version: link:../aihubmix-codegen
+        specifier: ^0.1.0
+        version: 0.1.0
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -26,6 +26,9 @@ importers:
         version: 2.1.9(@types/node@22.20.1)
 
 packages:
+
+  '@aihubmix/codegen@0.1.0':
+    resolution: {integrity: sha512-z18rcBrjzCvRcQxYu7417F9AYTVttClBqgPcnbWwPdsfH+dM+j7crFGC9ZqcNuXd2Qi+bh+B54MQWSFn+/zFrg==}
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -855,6 +858,8 @@ packages:
     hasBin: true
 
 snapshots:
+
+  '@aihubmix/codegen@0.1.0': {}
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true

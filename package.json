@@ -38,7 +38,7 @@
     "test:all": "pnpm typecheck && pnpm test"
   },
   "dependencies": {
-    "@aihubmix/codegen": "link:../aihubmix-codegen"
+    "@aihubmix/codegen": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

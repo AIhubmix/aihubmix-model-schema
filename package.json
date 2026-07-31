@@ -1,6 +1,6 @@
 {
   "name": "@aihubmix/model-schema",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "canon (AIHubMix model knowledge base) vocabulary layer: verdict semantics, capability-key to wire-shape puts, and sample values. Translates canon records into the wire-only input @aihubmix/codegen accepts.",
   "type": "module",
   "license": "MIT",

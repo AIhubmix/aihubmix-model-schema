@@ -25,6 +25,7 @@ import {
   canonParams,
   canonProtocols,
   canonResolver,
+  usableVerdict,
   type CanonIndex,
   type CanonModelDoc,
 } from '../src/canon.js';
@@ -64,6 +65,18 @@ describe('协议维度：「宣称支持」与「有可调参数」是两件事'
       expect(byProto[p].capabilityCount, p).toBeGreaterThan(0);
       expect(byProto[p].fieldCount, p).toBe(0);
     }
+  });
+
+  it('basicGeneration 轴:claude-opus-5 的 gemini 是实测被拒,不该出 tab', () => {
+    const byProto = Object.fromEntries(canonProtocols(opus).map((v) => [v.proto, v]));
+    // chat/responses 零字段但 basic-generation 实测通过 → 可用(基础对话形式)
+    expect(byProto.chat.basicGeneration).toBe('tested-effective');
+    expect(usableVerdict(byProto.chat.basicGeneration)).toBe(true);
+    // gemini 实测被拒 → 不可用,消费端据此不出协议 tab
+    expect(byProto.gemini.basicGeneration).toBe('rejected-or-unsupported');
+    expect(usableVerdict(byProto.gemini.basicGeneration)).toBe(false);
+    // canon 没记 basic-generation 的按可用处理(fail-open)
+    expect(usableVerdict(null)).toBe(true);
   });
 
   it('gpt-5.6-sol 的 chat 与 responses 都有字段（全量面板那条路）', () => {

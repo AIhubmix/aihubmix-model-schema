@@ -129,6 +129,21 @@ export interface CanonProtocolView {
   capabilityCount: number;
   /** 真能进参数面板的字段数。为 0 ⇒ 该协议只出最基础对话形式。 */
   fieldCount: number;
+  /**
+   * basic-generation 能力在所选轴（默认 aihubmix）上的 verdict；canon 没给这条能力时为 null。
+   *
+   * 这是「该不该给这个协议出 tab」的判据：`rejected-or-unsupported` / `do-not-send` 意味着
+   * canon **实测这个协议在该模型上发不通**（kimi-k3 / qwen / claude-opus-5 的 gemini 协议
+   * 就是），出 tab 等于引导用户发一个必失败的请求。零字段但 verdict 通过的协议
+   * （claude-opus-5 的 chat/responses）照旧走基础对话形式 —— 零字段 ≠ 不能用。
+   * 消费端按 `usableVerdict()` 判，别自己 hardcode verdict 字面量。
+   */
+  basicGeneration: Verdict | null;
+}
+
+/** `basicGeneration` 是否允许把协议当可用协议展示。null（canon 没记）按可用处理 —— fail-open。 */
+export function usableVerdict(v: Verdict | null): boolean {
+  return v !== 'rejected-or-unsupported' && v !== 'do-not-send';
 }
 
 /** 参数面板的一项。`path` 是 wire 路径，`'a.b.c'` 表示嵌套。 */
@@ -222,11 +237,14 @@ export function canonProtocols(
         if (!proto) continue; // canon 有、codegen 没有的协议（dashscope）
         let view = acc.get(proto);
         if (!view) {
-          view = { proto, canonProtocol, capabilityCount: 0, fieldCount: 0 };
+          view = { proto, canonProtocol, capabilityCount: 0, fieldCount: 0, basicGeneration: null };
           acc.set(proto, view);
         }
         view.capabilityCount++;
         view.fieldCount += paramsOfEntry(entry, cap.key ?? '', opts).length;
+        if (cap.key === 'basic-generation') {
+          view.basicGeneration = (sideOf(entry, opts.axis ?? 'aihubmix')?.verdict as Verdict | undefined) ?? null;
+        }
       }
     }
   }

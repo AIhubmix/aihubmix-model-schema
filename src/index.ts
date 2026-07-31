@@ -69,6 +69,7 @@ export {
 export {
   NO_CANON_RESOLVER,
   canonEntry,
+  usableVerdict,
   canonParams,
   canonProtocols,
   canonResolver,

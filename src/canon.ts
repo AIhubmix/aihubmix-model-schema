@@ -336,7 +336,7 @@ export function canonResolver(
         if (!entry.protocol) continue;
         const proto = CANON_TO_PROTO[entry.protocol];
         if (!proto) continue;
-        const k = `${cap.key} ${proto}`;
+        const k = `${cap.key}\u0000${proto}`;
         if (table.has(k)) continue; // 同上：保留第一条
         const fields = (entry.fields ?? [])
           .map((f) => f?.name)
@@ -346,7 +346,7 @@ export function canonResolver(
       }
     }
   }
-  return (cap, proto) => table.get(`${cap} ${proto}`) ?? null;
+  return (cap, proto) => table.get(`${cap}\u0000${proto}`) ?? null;
 }
 
 /**

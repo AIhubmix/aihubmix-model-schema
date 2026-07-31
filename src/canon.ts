@@ -315,16 +315,26 @@ export function canonParams(
   proto: CodeProto,
   opts: CanonReadOpts = {},
 ): CanonParam[] {
-  const seen = new Set<string>();
+  // 同一路径可能在多条能力下各记一次,且结论可能**冲突**:qwen × responses 的
+  // reasoning.effort 在 thinking-toggle 下是 rejected(作为开关关不掉)、在
+  // reasoning-effort 下是 accepted-unverified(作为档位能调)。原来的「先到先得」
+  // 让文档顺序决定谁赢 —— rejected 先到就把可用的那条吞了,面板凭空少一个参数。
+  // 现在按可用性择优:可选的压过不可选的;同为可选(或同为不可选)仍保留先到的
+  // (顺序稳定,canon 的域顺序即展示顺序)。
+  const seen = new Map<string, number>();
   const out: CanonParam[] = [];
   for (const dom of doc?.domains ?? []) {
     for (const cap of dom.capabilities ?? []) {
       for (const entry of cap.protocols ?? []) {
         if (!entry.protocol || CANON_TO_PROTO[entry.protocol] !== proto) continue;
         for (const p of paramsOfEntry(entry, cap.key ?? '', opts)) {
-          if (seen.has(p.path)) continue;
-          seen.add(p.path);
-          out.push(p);
+          const at = seen.get(p.path);
+          if (at === undefined) {
+            seen.set(p.path, out.length);
+            out.push(p);
+          } else if (p.selectable && !out[at].selectable) {
+            out[at] = p; // 择优替换,位置不变
+          }
         }
       }
     }

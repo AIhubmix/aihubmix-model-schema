@@ -114,9 +114,29 @@ describe('参数面板：哪些字段能进', () => {
     for (const p of messagesParams) expect(p.path, p.path).not.toMatch(/[[\]=]/);
   });
 
-  it('同名字段只保留第一条（canon 会在多条能力下各记一次）', () => {
+  it('同名字段只保留一条（canon 会在多条能力下各记一次）', () => {
     const paths = messagesParams.map((p) => p.path);
     expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  it('同路径结论冲突时可选压过不可选,与文档顺序无关(qwen responses reasoning.effort 的真实形状)', () => {
+    // rejected 条目先到:原「先到先得」会把可用的那条吞掉 —— 面板凭空少一个参数
+    const mk = (first: 'rejected-or-unsupported' | 'accepted-unverified', second: typeof first): CanonModelDoc => ({
+      domains: [{ capabilities: [
+        { key: 'thinking-toggle', protocols: [{ protocol: 'openai.responses', aihubmix: { verdict: first }, fields: [{ name: 'reasoning.effort' }] }] },
+        { key: 'reasoning-effort', protocols: [{ protocol: 'openai.responses', aihubmix: { verdict: second }, fields: [{ name: 'reasoning.effort', enum: ['low', 'high'] }] }] },
+      ] }],
+    });
+    for (const doc of [mk('rejected-or-unsupported', 'accepted-unverified'), mk('accepted-unverified', 'rejected-or-unsupported')]) {
+      const ps = canonParams(doc, 'responses');
+      expect(ps).toHaveLength(1);
+      expect(ps[0].selectable, '两种顺序都必须是可选那条赢').toBe(true);
+    }
+    // 同为不可选时不涉及择优,保留先到的(顺序稳定)
+    const both = canonParams(mk('rejected-or-unsupported', 'rejected-or-unsupported'), 'responses');
+    expect(both).toHaveLength(1);
+    expect(both[0].selectable).toBe(false);
+    expect(both[0].cap).toBe('thinking-toggle');
   });
 
   it('每项都带得回 canon 能力 key，UI 才能分组', () => {

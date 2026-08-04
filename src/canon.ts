@@ -259,7 +259,11 @@ function paramsOfEntry(
 ): CanonParam[] {
   const axis = opts.axis ?? 'aihubmix';
   const side = sideOf(entry, axis);
-  const verdict = (side?.verdict as Verdict | undefined) ?? null;
+  // 轴缺席 ≠ 无记录:公网投影自 2026-08-04 起不携带 aihubmix 轴(实测结论仅内部),
+  // 条目本身存在时按「未实测」处理(unverified,可选+标注),而不是 NO_ENTRY(不可选)——
+  // 否则撤轴那一刻所有参数会被划成不可调。official 轴照旧:显式请求 official 时缺席仍是 null。
+  const axisAbsent = axis === 'aihubmix' && side === undefined;
+  const verdict = (side?.verdict as Verdict | undefined) ?? (axisAbsent ? 'unverified' : null);
   const policy: VerdictPolicy = verdictPolicy(verdict);
   const out: CanonParam[] = [];
 

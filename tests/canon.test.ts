@@ -102,6 +102,30 @@ describe('协议维度：「宣称支持」与「有可调参数」是两件事'
   });
 });
 
+describe('公网投影撤 aihubmix 轴后的缺席语义（2026-08-04）', () => {
+  it('条目在、aihubmix 块缺席 → unverified（可选+标注），不是 NO_ENTRY（不可选）', () => {
+    const doc = JSON.parse(JSON.stringify(opus)) as typeof opus;
+    for (const d of (doc as { domains?: Array<{ capabilities?: Array<{ protocols?: Array<Record<string, unknown>> }> }> }).domains ?? [])
+      for (const c of d.capabilities ?? [])
+        for (const pr of c.protocols ?? []) delete pr.aihubmix;
+    const ps = canonParams(doc, 'messages');
+    expect(ps.length).toBeGreaterThan(0);
+    for (const p of ps.filter((x) => x.reason === 'ok' || x.reason === 'verdict')) {
+      expect(p.verdict).toBe('unverified');
+      expect(p.selectable).toBe(true);
+    }
+  });
+
+  it('显式请求 official 轴时缺席仍是 null（语义不变）', () => {
+    const doc = JSON.parse(JSON.stringify(opus)) as typeof opus;
+    for (const d of (doc as { domains?: Array<{ capabilities?: Array<{ protocols?: Array<Record<string, unknown>> }> }> }).domains ?? [])
+      for (const c of d.capabilities ?? [])
+        for (const pr of c.protocols ?? []) delete pr.official;
+    const ps = canonParams(doc, 'messages', { axis: 'official' });
+    for (const p of ps) expect(p.verdict).toBe(null);
+  });
+});
+
 describe('参数面板：哪些字段能进', () => {
   const messagesParams = canonParams(opus, 'messages');
 

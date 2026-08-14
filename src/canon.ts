@@ -48,6 +48,29 @@ export interface CanonFieldOverride {
   source?: string;
 }
 
+/**
+ * 字段**子路径**的补丁（schema 1.1.0 起）。`path` 是相对父字段 `name` 的剩余路径 ——
+ * 父 `thinking` + path `type` 说的是 `thinking.type`。线上实例：coding-glm-5.3 的 chat 面
+ * `thinking` 带 `[{path:"type",status:"model-specific-enum",enum:["enabled"]}]`。
+ *
+ * **生产者契约：子路径的 enum/value 不得提升到父字段本体**（会把子字段值域错标成
+ * 父字段的），消费方按自己的 shape 应用。所以本包只原样透传，不做任何合并。
+ */
+export interface CanonSubfieldOverride extends CanonFieldOverride {
+  path?: string;
+}
+
+/**
+ * 模型级的**独立勿传声明**（schema 1.1.0 起，挂在文档 top-level、domains 同级）。
+ * 多为 do-not-send / unsupported-by-model：字段不属于任何能力条目，但 canon 实测/查证了
+ * 「这个模型上别发」。`protocol` 是 canon 协议 id（如 `openai.chat_completions`）。
+ * 线上实例：grok-4.6 有 9 条。
+ */
+export interface CanonStandaloneOverride extends CanonFieldOverride {
+  protocol?: string;
+  field?: string;
+}
+
 export interface CanonField {
   name: string;
   type?: string;
@@ -60,6 +83,8 @@ export interface CanonField {
   /** 'deprecated' 等。canon 标了废弃就不该再往面板上放。 */
   status?: string;
   override?: CanonFieldOverride;
+  /** 子路径补丁，按 path 排序。只透传，不合并到本体（见 CanonSubfieldOverride 上的生产者契约）。 */
+  subfield_overrides?: ReadonlyArray<CanonSubfieldOverride>;
   /**
    * **这个字段自己**的厂商出处（与 `CanonProtocolEntry.official` 那条 verdict 出处不是一回事）。
    * `quote` 是厂商文档的英文原话，实测覆盖率 12/25（claude-opus-5）、13/62（gpt-5.6-sol）。
@@ -102,6 +127,8 @@ export interface CanonModelDoc {
   last_verified?: string;
   protocols?: string[];
   domains?: CanonDomain[];
+  /** 模型级独立勿传声明（与 domains 同级）。用 `canonStandaloneOverrides()` 读，别裸遍历。 */
+  standalone_overrides?: ReadonlyArray<CanonStandaloneOverride>;
 }
 
 /** index.json 里的一条。**`path` 必须用它** —— 文件名带内容哈希，拼 `models/{id}.json` 会 404。 */
@@ -172,6 +199,11 @@ export interface CanonParam {
    */
   fieldOfficial?: { quote?: string; source?: string; fetched_at?: string };
   override?: CanonFieldOverride;
+  /**
+   * 子路径补丁，原样透传（与 `override` 同风格）。**不会**被应用到本项的 enum/default 上 ——
+   * 生产者契约明说子路径值域不属于父字段，怎么落到嵌套 shape 由消费端自定。
+   */
+  subfieldOverrides?: ReadonlyArray<CanonSubfieldOverride>;
 }
 
 export type CanonParamReason =
@@ -303,6 +335,7 @@ function paramsOfEntry(
       official: entry.official,
       fieldOfficial: f.official,
       override: f.override,
+      subfieldOverrides: f.subfield_overrides,
     });
   }
   return out;
@@ -347,6 +380,32 @@ export function canonParams(
 }
 
 /**
+ * 模型级独立勿传声明的类型化清单。`proto` 给了就只留该代码协议的（canon 协议 id 经
+ * `CANON_TO_PROTO` 换算后比对）；不给则全量返回。空/缺席一律 `[]`，调用方不用判空。
+ *
+ * 这些条目**不属于任何能力**（所以进不了 `canonParams` 面板），但消费端要拿它们做
+ * 「这个模型别发 X」的展示与过滤 —— `canonResolver` 内部也用同一份数据剔字段。
+ */
+export function canonStandaloneOverrides(
+  doc: CanonModelDoc | null | undefined,
+  proto?: CodeProto,
+): CanonStandaloneOverride[] {
+  const all = doc?.standalone_overrides ?? [];
+  if (!proto) return [...all];
+  return all.filter((o) => !!o.protocol && CANON_TO_PROTO[o.protocol] === proto);
+}
+
+/** 本协议上「勿传」的字段名集合：standalone_overrides 里 do-not-send / unsupported-by-model 的。 */
+function standaloneBlockedNames(doc: CanonModelDoc | null | undefined, canonProtocol: string): Set<string> {
+  const out = new Set<string>();
+  for (const o of doc?.standalone_overrides ?? []) {
+    if (o.protocol !== canonProtocol || !o.field) continue;
+    if (o.status === 'do-not-send' || o.status === 'unsupported-by-model') out.add(o.field);
+  }
+  return out;
+}
+
+/**
  * doc → `generateFromCapabilities()` 要的 `resolve`。
  *
  * 契约要求它**不抛异常**；这里是纯查表，天然不抛。返回 null 表示 canon 没有这条记录 ——
@@ -370,9 +429,16 @@ export function canonResolver(
         if (!proto) continue;
         const k = `${cap.key}\u0000${proto}`;
         if (table.has(k)) continue; // 同上：保留第一条
+        // 勿传声明不该进生成的请求体：canon 说「这个模型上发了会坏/不生效」，留在 fields
+        // 里就是引导 codegen 拼一个必失败（或静默无效）的参数。两处硬信号都剔——
+        //   ① 字段级 override.do-not-send（与 paramsOfEntry 划掉面板项同一依据）；
+        //   ② 本协议 standalone_overrides 里 do-not-send / unsupported-by-model 的同名字段。
+        // deprecated **不剔**：那是「能用但不建议」，与 paramsOfEntry 的 level 语义一致。
+        const blocked = standaloneBlockedNames(doc, entry.protocol);
         const fields = (entry.fields ?? [])
+          .filter((f) => f?.override?.status !== 'do-not-send')
           .map((f) => f?.name)
-          .filter((n): n is string => !!n && !isPatternName(n));
+          .filter((n): n is string => !!n && !isPatternName(n) && !blocked.has(n));
         const verdict = sideOf(entry, axis)?.verdict as Verdict | undefined;
         table.set(k, { fields, ...(verdict ? { verdict } : {}) });
       }

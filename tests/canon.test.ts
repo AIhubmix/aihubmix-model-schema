@@ -25,6 +25,7 @@ import {
   canonParams,
   canonProtocols,
   canonResolver,
+  canonStandaloneOverrides,
   usableVerdict,
   type CanonIndex,
   type CanonModelDoc,
@@ -36,6 +37,12 @@ const read = <T>(f: string): T => JSON.parse(readFileSync(join(FIX, f), 'utf8'))
 const index = read<CanonIndex>('index.json');
 const opus = read<CanonModelDoc>('claude-opus-5.9e8d2666.json');
 const gpt = read<CanonModelDoc>('gpt-5.6-sol.92359903.json');
+// 下面两份是 2026-08-14 原样下载的（schema 1.1.0，带 override 全挂载新结构）：
+//   https://aihubmix.com/model-data/models/coding-glm-5.3.a3105283.json —— 字段级 subfield_overrides 的线上实例
+//   https://aihubmix.com/model-data/models/grok-4.6.1b41e7ae.json —— 模型级 standalone_overrides 的线上实例（9 条）
+// path 取自同日的 https://aihubmix.com/model-data/index.json。文件名去哈希存，避免每次内容变动都改测试代码。
+const glm = read<CanonModelDoc>('coding-glm-5.3.json');
+const grok = read<CanonModelDoc>('grok-4.6.json');
 
 describe('index：必须走 entry.path，不许自己拼', () => {
   it('按 id 找得到条目', () => {
@@ -290,6 +297,88 @@ describe('resolver：喂给 generateFromCapabilities', () => {
       const r = resolve(cap, 'messages');
       for (const f of r?.fields ?? []) expect(f, `${cap} → ${f}`).not.toMatch(/[[\]=]/);
     }
+  });
+});
+
+describe('override 全挂载（schema 1.1.0）：subfield_overrides 透传 + standalone_overrides 消费', () => {
+  it('subfield_overrides 原样透传：path 在，父字段 enum 不被子路径值域污染（glm 的 chat thinking）', () => {
+    const thinking = canonParams(glm, 'chat').find((p) => p.path === 'thinking');
+    expect(thinking, '线上实例：coding-glm-5.3 chat 面的 thinking 带 subfield_overrides').toBeDefined();
+    expect(thinking!.subfieldOverrides?.length).toBeGreaterThan(0);
+    for (const so of thinking!.subfieldOverrides!) expect(so.path, 'path 是相对父字段的剩余路径').toBeTruthy();
+    // 生产者契约：thinking.type 的 enum 属于**子路径**，不许提升为父字段本体的 enum/default。
+    // 提升会把「type 只能是 enabled」错标成「thinking 只能是 enabled」。
+    const sub = thinking!.subfieldOverrides!.find((s) => s.path === 'type');
+    expect(sub?.enum?.length).toBeGreaterThan(0);
+    expect(thinking!.enum, '父字段本体没有 enum，透传后也不该凭空长出来').toBeUndefined();
+    expect(thinking!.default).toBeUndefined();
+  });
+
+  it('canonStandaloneOverrides：类型化清单 + 按协议过滤 + 空/缺席回 []', () => {
+    const all = canonStandaloneOverrides(grok);
+    expect(all.length, '线上实例：grok-4.6 带 standalone_overrides').toBeGreaterThan(0);
+    for (const o of all) {
+      expect(o.protocol, 'protocol 是 canon 协议 id').toBeTruthy();
+      expect(o.field).toBeTruthy();
+    }
+    const chat = canonStandaloneOverrides(grok, 'chat');
+    expect(chat.length).toBeGreaterThan(0);
+    for (const o of chat) expect(o.protocol).toBe('openai.chat_completions');
+    // 过滤是真过滤，不是全量照抄
+    expect(chat.length).toBeLessThan(all.length);
+    // 缺席（老投影 / 没有声明的模型）与空 doc 一律 []，调用方不用判空
+    expect(canonStandaloneOverrides(opus)).toEqual([]);
+    expect(canonStandaloneOverrides(null)).toEqual([]);
+    expect(canonStandaloneOverrides(grok, 'gemini')).toEqual([]);
+  });
+
+  it('canonResolver 剔除 standalone 勿传字段：grok 的 standalone 字段名不出现在 resolver 输出', () => {
+    const resolve = canonResolver(grok);
+    const capKeys = (grok.domains ?? []).flatMap((d) => (d.capabilities ?? []).map((c) => c.key!)).filter(Boolean);
+    for (const proto of ['chat', 'responses', 'messages', 'gemini'] as const) {
+      const banned = new Set(
+        canonStandaloneOverrides(grok, proto)
+          .filter((o) => o.status === 'do-not-send' || o.status === 'unsupported-by-model')
+          .map((o) => o.field),
+      );
+      for (const cap of capKeys) {
+        for (const f of resolve(cap, proto)?.fields ?? []) {
+          expect(banned.has(f), `${proto}/${cap}/${f} 是勿传字段，不该喂给代码生成`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('canonResolver 剔除字段级 override.do-not-send（真数据：opus messages 的 temperature）', () => {
+    // paramsOfEntry 会把它以「划掉」形态留在面板上（用户该看见为什么不可用），
+    // 但 resolver 是喂**代码生成**的 —— 生成的请求体里出现它就是引导用户发 400。
+    const r = canonResolver(opus)('sampling-deprecated', 'messages');
+    expect(r).not.toBeNull();
+    expect(r!.fields).not.toContain('temperature');
+  });
+
+  it('剔除逻辑合成 doc 全景：do-not-send/unsupported-by-model 剔、别协议的不剔、deprecated 不剔', () => {
+    const doc: CanonModelDoc = {
+      standalone_overrides: [
+        { protocol: 'openai.chat_completions', field: 'logprobs', status: 'unsupported-by-model' },
+        { protocol: 'openai.chat_completions', field: 'stop', status: 'do-not-send' },
+        // 别的协议的声明不能误伤 chat
+        { protocol: 'anthropic.messages', field: 'top_p', status: 'unsupported-by-model' },
+      ],
+      domains: [{ capabilities: [{ key: 'sampling', protocols: [{
+        protocol: 'openai.chat_completions',
+        aihubmix: { verdict: 'tested-effective' },
+        fields: [
+          { name: 'temperature' },
+          { name: 'logprobs' },                                    // ② standalone unsupported-by-model → 剔
+          { name: 'stop' },                                        // ② standalone do-not-send → 剔
+          { name: 'top_p' },                                       // messages 侧的声明，chat 不剔
+          { name: 'bad_field', override: { status: 'do-not-send' } }, // ① 字段级 do-not-send → 剔
+          { name: 'old_knob', status: 'deprecated' },              // deprecated 是「能用但不建议」→ 不剔
+        ],
+      }] }] }],
+    };
+    expect(canonResolver(doc)('sampling', 'chat')!.fields).toEqual(['temperature', 'top_p', 'old_knob']);
   });
 });
 

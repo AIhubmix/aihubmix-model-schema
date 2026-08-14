@@ -73,6 +73,7 @@ export {
   canonParams,
   canonProtocols,
   canonResolver,
+  canonStandaloneOverrides,
   type CanonCapability,
   type CanonDomain,
   type CanonField,
@@ -85,5 +86,7 @@ export {
   type CanonProtocolEntry,
   type CanonProtocolView,
   type CanonReadOpts,
+  type CanonStandaloneOverride,
+  type CanonSubfieldOverride,
   type CanonVerdictSide,
 } from './canon.js';

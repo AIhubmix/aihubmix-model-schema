@@ -43,6 +43,10 @@ const gpt = read<CanonModelDoc>('gpt-5.6-sol.92359903.json');
 // path 取自同日的 https://aihubmix.com/model-data/index.json。文件名去哈希存，避免每次内容变动都改测试代码。
 const glm = read<CanonModelDoc>('coding-glm-5.3.json');
 const grok = read<CanonModelDoc>('grok-4.6.json');
+// gemini-3.7-flash（同日下载，https://aihubmix.com/model-data/models/gemini-3.7-flash.*.json）：
+// 10 个 override 全部是传统 exact 挂载（无 subfield/standalone）的对照组 —— 用它钉
+// 「新消费代码不扰动存量形态」。
+const gem37 = read<CanonModelDoc>('gemini-3.7-flash.json');
 
 describe('index：必须走 entry.path，不许自己拼', () => {
   it('按 id 找得到条目', () => {
@@ -379,6 +383,41 @@ describe('override 全挂载（schema 1.1.0）：subfield_overrides 透传 + sta
       }] }] }],
     };
     expect(canonResolver(doc)('sampling', 'chat')!.fields).toEqual(['temperature', 'top_p', 'old_knob']);
+  });
+});
+
+describe('对照组：只有 exact 挂载的模型（gemini-3.7-flash）不被新结构消费代码扰动', () => {
+  const protos = ['chat', 'responses', 'messages', 'gemini'] as const;
+
+  it('无 standalone、无 subfield：传统形态不凭空长出新结构', () => {
+    expect(canonStandaloneOverrides(gem37)).toEqual([]);
+    for (const proto of protos) {
+      for (const p of canonParams(gem37, proto)) {
+        expect(p.subfieldOverrides, `${proto}/${p.path} 不该有 subfieldOverrides`).toBeUndefined();
+      }
+    }
+  });
+
+  it('model-specific-enum 的收窄照常落到字段本体（存量行为回归）', () => {
+    const narrowed = protos.flatMap((proto) =>
+      canonParams(gem37, proto).filter((p) => p.override?.status === 'model-specific-enum'),
+    );
+    // 线上实例：serviceTier / reasoning_effort / service_tier 等 —— manifest 里 10 键中
+    // 多数是 model-specific-enum，至少几条会以可见参数出现在面板上
+    expect(narrowed.length).toBeGreaterThanOrEqual(3);
+    for (const p of narrowed) {
+      expect(p.enum, `${p.path} 的本体 enum 应等于 override.enum`).toEqual(p.override!.enum);
+    }
+  });
+
+  it('resolver 不误剔：没有勿传声明的模型，字段全量喂给代码生成', () => {
+    const resolve = canonResolver(gem37);
+    const capKeys = (gem37.domains ?? []).flatMap((d) => (d.capabilities ?? []).map((c) => c.key!)).filter(Boolean);
+    let total = 0;
+    for (const proto of protos) for (const cap of capKeys) total += resolve(cap, proto)?.fields?.length ?? 0;
+    expect(total, '无 standalone/do-not-send 的模型不该有任何字段被剔').toBeGreaterThan(0);
+    // 抽查一条具体能力：reasoning-effort × chat 的 reasoning_effort 仍在
+    expect(resolve('reasoning-effort', 'chat')?.fields).toContain('reasoning_effort');
   });
 });
 

@@ -41,6 +41,9 @@ export {
 // ---- canon 协议 id 换算 ----
 export { CANON_TO_PROTO, PROTO_TO_CANON } from './protocols.js';
 
+// ---- 面（与四协议正交的第二维度，见 faces.ts）----
+export { CANON_TO_FACE, FACE_TO_CANON, type FaceId, type ProtoOrFace } from './faces.js';
+
 // ---- 示例值 ----
 export { DEFAULT_SAMPLES, type CapabilitySamples } from './samples.js';
 
@@ -70,12 +73,14 @@ export {
   NO_CANON_RESOLVER,
   canonEntry,
   usableVerdict,
+  canonFaces,
   canonParams,
   canonProtocols,
   canonResolver,
   canonStandaloneOverrides,
   type CanonCapability,
   type CanonDomain,
+  type CanonFaceView,
   type CanonField,
   type CanonFieldOverride,
   type CanonIndex,

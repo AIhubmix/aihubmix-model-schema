@@ -22,6 +22,7 @@ import { generateFromCapabilities, type CapabilityResolver } from '../src/genera
 import {
   NO_CANON_RESOLVER,
   canonEntry,
+  canonFaces,
   canonParams,
   canonProtocols,
   canonResolver,
@@ -30,6 +31,8 @@ import {
   type CanonIndex,
   type CanonModelDoc,
 } from '../src/canon.js';
+import { CANON_TO_FACE } from '../src/faces.js';
+import { CANON_TO_PROTO } from '../src/protocols.js';
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'canon');
 const read = <T>(f: string): T => JSON.parse(readFileSync(join(FIX, f), 'utf8')) as T;
@@ -47,6 +50,11 @@ const grok = read<CanonModelDoc>('grok-4.6.json');
 // 10 个 override 全部是传统 exact 挂载（无 subfield/standalone）的对照组 —— 用它钉
 // 「新消费代码不扰动存量形态」。
 const gem37 = read<CanonModelDoc>('gemini-3.7-flash.json');
+// jev-1.13（2026-09-18 原样下载，https://aihubmix.com/model-data/models/jev-1.13.c175cf75.json）：
+// 目前**唯一**一个不带任何四协议条目的模型 —— 4 条能力全挂在 `typesafe.systemone`
+// （decision 面，`POST /v1/systemone`）。它是 face 维度的真实样本，也是「新面不污染
+// canonProtocols()」这条向后兼容承诺的实证。
+const jev = read<CanonModelDoc>('jev-1.13.json');
 
 describe('index：必须走 entry.path，不许自己拼', () => {
   it('按 id 找得到条目', () => {
@@ -110,6 +118,87 @@ describe('协议维度：「宣称支持」与「有可调参数」是两件事'
     expect(canonProtocols(null)).toEqual([]);
     expect(canonProtocols({})).toEqual([]);
     expect(canonParams(undefined, 'chat')).toEqual([]);
+  });
+});
+
+describe('面（face）维度：与四协议正交，两张词表互不重叠', () => {
+  it('两张词表零交集 —— 一个 canon 协议 id 只会落在其中一边', () => {
+    // 这条是 canonProtocols/canonFaces「返回值互不重叠」的前提。合并两张表（或往
+    // PROTO_TO_CANON 里塞 decision）会先在这里红，而不是等到 playground 造出
+    // endpoint: undefined 的畸形 schema 才发现。
+    const overlap = Object.keys(CANON_TO_PROTO).filter((k) => k in CANON_TO_FACE);
+    expect(overlap).toEqual([]);
+  });
+
+  it('jev 走 decision 面：canonProtocols 返回空数组（向后兼容的核心断言）', () => {
+    // 下游靠「views 为空 ⇒ 没有 LLM 形态」做判断（playground canonSchema.ts 的
+    // `if (!views.length) return null`）。新面一旦漏进四协议表，那里会拿到一个它不认识的
+    // proto 去查 PROTO_TO_KIND，得到 undefined 且不报错。
+    expect(canonProtocols(jev)).toEqual([]);
+  });
+
+  it('canonFaces(jev) 给出唯一的 decision 面，计数与真实投影对齐', () => {
+    const faces = canonFaces(jev);
+    expect(faces.map((f) => f.face)).toEqual(['decision']);
+    expect(faces[0].canonProtocol).toBe('typesafe.systemone');
+    expect(faces[0].capabilityCount).toBe(4);
+    // fieldCount **不去重**（同一路径在多条能力下各记一次），canonParams 才按 path 收敛。
+    // jev 是 8 / 6：`questions{}.criteria` 在 noul/choice/score 三条原语能力下各记了一次。
+    expect(faces[0].fieldCount).toBe(8);
+    // canon 没记 basic-generation 这条能力 → null（fail-open，与四协议同口径）。
+    expect(faces[0].basicGeneration).toBe(null);
+  });
+
+  it('四协议模型的 canonFaces 是空的（反向不污染）', () => {
+    for (const [name, doc] of [['opus', opus], ['gpt', gpt], ['gem37', gem37]] as const) {
+      expect(canonFaces(doc), name).toEqual([]);
+    }
+  });
+
+  it('canonParams(jev, "decision") 恰好 6 行，逐字核对路径与枚举', () => {
+    const ps = canonParams(jev, 'decision');
+    expect(ps.map((p) => p.path)).toEqual([
+      'state',
+      'model',
+      'questions',
+      'questions{}.type',
+      'questions{}.instructions',
+      'questions{}.criteria',
+    ]);
+    // 三原语枚举来自 canon，不是 codegen 写死的那份 —— 两边必须一致（同源缝在 wire 侧，
+    // 这里钉的是知识库侧）。
+    expect(ps.find((p) => p.path === 'questions{}.type')?.enum).toEqual(['noul', 'choice', 'score']);
+    // 公网投影不带 aihubmix 轴 → 走 axisAbsent 分支判 unverified（可选 + 标注），
+    // 不是 NO_ENTRY（不可选）。参数表要真的能渲染出这 6 行。
+    for (const p of ps) {
+      expect(p.verdict, p.path).toBe('unverified');
+      expect(p.selectable, p.path).toBe(true);
+    }
+    // response 侧字段（answers{}.* / usage.* / detail[].*）不进参数面板。
+    expect(ps.some((p) => p.path.startsWith('answers'))).toBe(false);
+    expect(ps.some((p) => p.path.startsWith('usage'))).toBe(false);
+  });
+
+  it('按面取参数与按协议取参数互不串味', () => {
+    // 面 id 去查四协议模型 → 空；协议 id 去查纯 decision 模型 → 空。
+    expect(canonParams(gpt, 'decision')).toEqual([]);
+    expect(canonParams(jev, 'chat')).toEqual([]);
+    expect(canonParams(jev, 'responses')).toEqual([]);
+  });
+
+  it('四协议路径零漂移：加入面表前后，既有模型的取数逐字不变', () => {
+    // 面表只多认识了 typesafe.systemone 一个键，四协议模型身上没有这个键，所以
+    // canonProtocols/canonParams 的输出理应完全没动。这里用「协议数 + 各协议字段路径」
+    // 做指纹，任何一处被面逻辑扰动都会红。
+    // 下面这三份 snapshot 不是「新代码跑出来什么就存什么」—— 落盘前拿 0.1.4（引入 face
+    // 之前那版 canon.ts）对同样三份 fixture 算了一遍，逐字相同才留下的。
+    const fingerprint = (doc: CanonModelDoc) =>
+      canonProtocols(doc)
+        .map((v) => `${v.proto}:${v.capabilityCount}:${v.fieldCount}:${canonParams(doc, v.proto).map((p) => p.path).join(',')}`)
+        .sort();
+    expect(fingerprint(opus)).toMatchSnapshot('opus');
+    expect(fingerprint(gpt)).toMatchSnapshot('gpt-5.6-sol');
+    expect(fingerprint(gem37)).toMatchSnapshot('gemini-3.7-flash');
   });
 });
 

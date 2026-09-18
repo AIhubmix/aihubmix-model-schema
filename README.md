@@ -46,6 +46,20 @@ const { code, body, used, notes, availability } = generateFromCapabilities({
 
 `resolve` returning `null` means "no record" and the capability is left unselectable — the package does not guess. If `resolve` throws, only that one capability is dropped, with a `resolver-error` note; the rest of the generation is unaffected.
 
+## Faces (since 0.2.0)
+
+Not every model in the knowledge base speaks one of the four protocols. TypeSafe's `jev` family answers typed questions about a state (`POST /v1/systemone`) and returns structured results — no text generation, no streaming. That is a **face**: a second dimension, orthogonal to `CodeProto`, not a fifth protocol.
+
+```ts
+import { canonFaces, canonParams, canonProtocols } from '@aihubmix/model-schema';
+
+canonProtocols(jevDoc);            // [] — unchanged behaviour, still a closed 4-protocol set
+canonFaces(jevDoc);                // [{ face: 'decision', canonProtocol: 'typesafe.systemone', … }]
+canonParams(jevDoc, 'decision');   // the 6 body params of the decision face
+```
+
+`canonProtocols()` deliberately keeps returning only the four protocols, so consumers that key a `Record<CodeProto, X>` off its result (protocol → route, protocol → panel kind) keep working and cannot be handed an id they do not know. A model with no protocol view is a model with no chat-shaped schema — which is exactly what `jev` is. Adding a face touches `src/faces.ts` only; never add one to `PROTO_TO_CANON`.
+
 ## What this package does not do
 
 - **No I/O.** No network, no filesystem, no env reads. Fetching, caching, and content-addressed paths are the consumer's job — this package knows the knowledge base's *vocabulary*, not its *transport*. It must stay `require()`-able from a bare Node prerender script.

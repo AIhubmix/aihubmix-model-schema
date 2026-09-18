@@ -29,6 +29,8 @@
  */
 import type { CodeProto } from '@aihubmix/codegen';
 import { CANON_TO_PROTO } from './protocols.js';
+import type { FaceId, ProtoOrFace } from './faces.js';
+import { CANON_TO_FACE } from './faces.js';
 import type { CapLevel, Verdict, VerdictPolicy } from './verdicts.js';
 import { verdictPolicy } from './verdicts.js';
 import type { CapabilityResolution, CapabilityResolver } from './generate.js';
@@ -168,6 +170,26 @@ export interface CanonProtocolView {
   basicGeneration: Verdict | null;
 }
 
+/**
+ * 一个**面**在 canon 里的概况。字段与 `CanonProtocolView` 一一对应，只把 `proto` 换成 `face`。
+ *
+ * 形状特意不复用 —— 两者能互相赋值的话，面就会悄悄流进那些 `Record<CodeProto, X>` 的查找表
+ * （理由见 `faces.ts` 头部）。多这十行换编译期挡住，值得。
+ */
+export interface CanonFaceView {
+  face: FaceId;
+  /** 原始 canon 协议 id，排错时对得上源数据。 */
+  canonProtocol: string;
+  capabilityCount: number;
+  /**
+   * 条目数，**不去重**：同一路径在多条能力下各记一次就各算一次（`canonParams` 才按 path 收敛）。
+   * jev 的 decision 面是 8 / 6 —— `questions{}.criteria` 在三条原语能力下各记了一次。
+   */
+  fieldCount: number;
+  /** 见 `CanonProtocolView.basicGeneration`。面通常没有 `basic-generation` 这条能力，为 null（fail-open）。 */
+  basicGeneration: Verdict | null;
+}
+
 /** `basicGeneration` 是否允许把协议当可用协议展示。null（canon 没记）按可用处理 —— fail-open。 */
 export function usableVerdict(v: Verdict | null): boolean {
   return v !== 'rejected-or-unsupported' && v !== 'do-not-send';
@@ -259,18 +281,47 @@ export function canonProtocols(
   doc: CanonModelDoc | null | undefined,
   opts: CanonReadOpts = {},
 ): CanonProtocolView[] {
-  const acc = new Map<CodeProto, CanonProtocolView>();
+  return collectViews(doc, CANON_TO_PROTO, opts).map(([proto, agg]) => ({ proto, ...agg }));
+}
+
+/**
+ * doc 里出现过、且能对应到**面**的面列表（见 `faces.ts`：面与 `CodeProto` 正交）。
+ *
+ * 与 `canonProtocols()` 同形、同一套计数口径，只是走另一张词表。两者的返回值**互不重叠**：
+ * 一个 canon 协议 id 只会落在其中一张表里，所以 jev 这种纯 decision 模型
+ * `canonProtocols()` 返回空数组（下游「没有 LLM 形态」的既有判断因此自动成立），
+ * 而四协议模型 `canonFaces()` 返回空数组。
+ */
+export function canonFaces(
+  doc: CanonModelDoc | null | undefined,
+  opts: CanonReadOpts = {},
+): CanonFaceView[] {
+  return collectViews(doc, CANON_TO_FACE, opts).map(([face, agg]) => ({ face, ...agg }));
+}
+
+/**
+ * `canonProtocols` / `canonFaces` 的共同躯干：按给定词表把 doc 的能力条目归并计数。
+ *
+ * 词表作参数传入是**行为等价的关键** —— 两个入口除了查哪张表以外没有任何差别，
+ * 照抄一份循环迟早会漂（一边修了 verdict 取法另一边没修）。
+ */
+function collectViews<T extends string>(
+  doc: CanonModelDoc | null | undefined,
+  table: Record<string, T>,
+  opts: CanonReadOpts,
+): Array<[T, { canonProtocol: string; capabilityCount: number; fieldCount: number; basicGeneration: Verdict | null }]> {
+  const acc = new Map<T, { canonProtocol: string; capabilityCount: number; fieldCount: number; basicGeneration: Verdict | null }>();
   for (const dom of doc?.domains ?? []) {
     for (const cap of dom.capabilities ?? []) {
       for (const entry of cap.protocols ?? []) {
         const canonProtocol = entry.protocol;
         if (!canonProtocol) continue;
-        const proto = CANON_TO_PROTO[canonProtocol];
-        if (!proto) continue; // canon 有、codegen 没有的协议（dashscope）
-        let view = acc.get(proto);
+        const id = table[canonProtocol];
+        if (!id) continue; // 这张表不认识的（四协议表遇到 typesafe.systemone / dashscope，面表遇到 openai.chat_completions）
+        let view = acc.get(id);
         if (!view) {
-          view = { proto, canonProtocol, capabilityCount: 0, fieldCount: 0, basicGeneration: null };
-          acc.set(proto, view);
+          view = { canonProtocol, capabilityCount: 0, fieldCount: 0, basicGeneration: null };
+          acc.set(id, view);
         }
         view.capabilityCount++;
         view.fieldCount += paramsOfEntry(entry, cap.key ?? '', opts).length;
@@ -280,7 +331,7 @@ export function canonProtocols(
       }
     }
   }
-  return [...acc.values()];
+  return [...acc.entries()];
 }
 
 /** 把一条 protocol entry 的 fields 摊成参数面板项（不含模式字段与非 body 字段）。 */
@@ -342,14 +393,18 @@ function paramsOfEntry(
 }
 
 /**
- * 某协议下的参数面板字段，按 canon 的 domain / capability 顺序。
+ * 某协议**或某个面**下的参数面板字段，按 canon 的 domain / capability 顺序。
  *
  * 同名字段可能被多条能力各记一次（如 `max_tokens` 同时属于 output-limit 与校验类能力）。
  * 保留**第一条**：canon 的 domain 有 `order`，先出现的是更贴切的那条归属。
+ *
+ * 第二参收 `CodeProto | FaceId`：取参数这件事对协议和面完全同构（都是「按 canon 协议 id
+ * 筛条目再摊字段」），分两个函数只会让调用方多一层分支。两张词表不交叉，所以传
+ * `'chat'` 与传 `'decision'` 各自只会命中自己那批条目，四协议的既有行为逐字不变。
  */
 export function canonParams(
   doc: CanonModelDoc | null | undefined,
-  proto: CodeProto,
+  proto: ProtoOrFace,
   opts: CanonReadOpts = {},
 ): CanonParam[] {
   // 同一路径可能在多条能力下各记一次,且结论可能**冲突**:qwen × responses 的
@@ -363,7 +418,9 @@ export function canonParams(
   for (const dom of doc?.domains ?? []) {
     for (const cap of dom.capabilities ?? []) {
       for (const entry of cap.protocols ?? []) {
-        if (!entry.protocol || CANON_TO_PROTO[entry.protocol] !== proto) continue;
+        if (!entry.protocol) continue;
+        const id: ProtoOrFace | undefined = CANON_TO_PROTO[entry.protocol] ?? CANON_TO_FACE[entry.protocol];
+        if (id !== proto) continue;
         for (const p of paramsOfEntry(entry, cap.key ?? '', opts)) {
           const at = seen.get(p.path);
           if (at === undefined) {
@@ -380,19 +437,23 @@ export function canonParams(
 }
 
 /**
- * 模型级独立勿传声明的类型化清单。`proto` 给了就只留该代码协议的（canon 协议 id 经
- * `CANON_TO_PROTO` 换算后比对）；不给则全量返回。空/缺席一律 `[]`，调用方不用判空。
+ * 模型级独立勿传声明的类型化清单。`proto` 给了就只留该协议/面的（canon 协议 id 经
+ * `CANON_TO_PROTO` / `CANON_TO_FACE` 换算后比对）；不给则全量返回。空/缺席一律 `[]`，
+ * 调用方不用判空。（面同样收：今天 jev 没有 standalone_overrides，但收面是零成本的，
+ * 不收的话将来有了会变成一个编译期才发现的死角。）
  *
  * 这些条目**不属于任何能力**（所以进不了 `canonParams` 面板），但消费端要拿它们做
  * 「这个模型别发 X」的展示与过滤 —— `canonResolver` 内部也用同一份数据剔字段。
  */
 export function canonStandaloneOverrides(
   doc: CanonModelDoc | null | undefined,
-  proto?: CodeProto,
+  proto?: ProtoOrFace,
 ): CanonStandaloneOverride[] {
   const all = doc?.standalone_overrides ?? [];
   if (!proto) return [...all];
-  return all.filter((o) => !!o.protocol && CANON_TO_PROTO[o.protocol] === proto);
+  return all.filter(
+    (o) => !!o.protocol && (CANON_TO_PROTO[o.protocol] ?? CANON_TO_FACE[o.protocol]) === proto,
+  );
 }
 
 /** 本协议上「勿传」的字段名集合：standalone_overrides 里 do-not-send / unsupported-by-model 的。 */

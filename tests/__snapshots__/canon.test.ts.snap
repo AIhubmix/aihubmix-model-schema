@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`面（face）维度：与四协议正交，两张词表互不重叠 > 四协议路径零漂移：加入面表前后，既有模型的取数逐字不变 > gemini-3.7-flash 1`] = `
+[
+  "chat:22:20:model,messages,stream,max_completion_tokens,max_tokens,stop,n,reasoning_effort,temperature,top_p,seed,tools,tool_choice,web_search_options,response_format,extra_body.google,service_tier",
+  "gemini:30:27:contents,systemInstruction,generationConfig.maxOutputTokens,generationConfig.stopSequences,generationConfig.thinkingConfig.thinkingLevel,generationConfig.thinkingConfig.thinkingBudget,generationConfig.thinkingConfig.includeThoughts,generationConfig.temperature,generationConfig.topP,generationConfig.topK,generationConfig.seed,generationConfig.responseLogprobs,generationConfig.logprobs,tools,toolConfig,generationConfig.responseSchema,generationConfig.responseMimeType,generationConfig.responseJsonSchema,generationConfig.responseFormat,generationConfig.mediaResolution,cachedContent,serviceTier,store,labels,safetySettings",
+  "messages:17:12:model,messages,system,stream,max_tokens,stop_sequences,thinking,tools,tool_choice,output_config,service_tier",
+  "responses:18:12:model,input,instructions,stream,stream_options,max_output_tokens,reasoning.effort,tools,tool_choice,text.format,prompt_cache_options,service_tier",
+]
+`;
+
+exports[`面（face）维度：与四协议正交，两张词表互不重叠 > 四协议路径零漂移：加入面表前后，既有模型的取数逐字不变 > gpt-5.6-sol 1`] = `
+[
+  "chat:19:22:model,messages,stream,max_completion_tokens,max_tokens,stop,verbosity,reasoning_effort,temperature,tools,tool_choice,response_format,audio,modalities,prompt_cache_options,prompt_cache_key,prompt_cache_retention,service_tier,store,metadata,safety_identifier",
+  "messages:12:10:model,messages,system,stream,max_tokens,stop_sequences,thinking,temperature,tools,tool_choice",
+  "responses:25:26:model,input,instructions,stream,max_output_tokens,text.verbosity,reasoning.effort,reasoning.mode,reasoning.summary,reasoning.context,include,temperature,tools,tool_choice,programmatic_tool_calling,text.format,prompt_cache_options,prompt_cache_key,prompt_cache_retention,previous_response_id,background,context_management,service_tier,store,metadata,safety_identifier",
+]
+`;
+
+exports[`面（face）维度：与四协议正交，两张词表互不重叠 > 四协议路径零漂移：加入面表前后，既有模型的取数逐字不变 > opus 1`] = `
+[
+  "chat:1:0:",
+  "gemini:1:0:",
+  "messages:35:22:model,messages,system,stream,max_tokens,stop_sequences,output_config.task_budget,output_config.effort,thinking,thinking.display,temperature,tools,tool_choice,output_config.format,service_tier,metadata.user_id,inference_geo,speed,fallbacks",
+  "responses:1:0:",
+]
+`;

@@ -1,5 +1,13 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`openai-decision 面：四协议与面并存（gpt-6-luna） > 加面前后 luna 的四协议取数逐字不变 > gpt-6-luna 1`] = `
+[
+  "chat:16:18:model,messages,stream,stream_options,max_completion_tokens,max_tokens,verbosity,reasoning_effort,temperature,top_p,tools,web_search_options,response_format,prompt_cache_options,prompt_cache_options.mode,prompt_cache_options.ttl,service_tier",
+  "messages:16:10:model,messages,system,stream,max_tokens,thinking,thinking.display,tools,mcp_servers,output_config",
+  "responses:29:20:model,input,instructions,stream,stream_options,max_output_tokens,text.verbosity,reasoning.effort,reasoning.mode,reasoning.summary,tools,max_tool_calls,tool_choice,parallel_tool_calls,text.format,prompt_cache_options,prompt_cache_options.mode,prompt_cache_options.ttl,context_management,service_tier",
+]
+`;
+
 exports[`面（face）维度：与四协议正交，两张词表互不重叠 > 四协议路径零漂移：加入面表前后，既有模型的取数逐字不变 > gemini-3.7-flash 1`] = `
 [
   "chat:22:20:model,messages,stream,max_completion_tokens,max_tokens,stop,n,reasoning_effort,temperature,top_p,seed,tools,tool_choice,web_search_options,response_format,extra_body.google,service_tier",

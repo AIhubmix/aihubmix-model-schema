@@ -55,6 +55,11 @@ const gem37 = read<CanonModelDoc>('gemini-3.7-flash.json');
 // （decision 面，`POST /v1/systemone`）。它是 face 维度的真实样本，也是「新面不污染
 // canonProtocols()」这条向后兼容承诺的实证。
 const jev = read<CanonModelDoc>('jev-1.13.json');
+// gpt-6-luna（2026-10-09 原样下载，https://aihubmix.com/model-data/models/gpt-6-luna.728e3740.json，
+// 同日 index 的 canon_git_sha 6cf8c126；文件 sha256 前 8 位即 728e3740，与内容寻址文件名一致）：
+// 第一个**四协议与面并存**的模型 —— chat / responses / messages 之外，另有 6 条能力挂在
+// `openai.decisions`（OpenAI Decisions，`POST /v1/decisions`）。
+const luna = read<CanonModelDoc>('gpt-6-luna.json');
 
 describe('index：必须走 entry.path，不许自己拼', () => {
   it('按 id 找得到条目', () => {
@@ -199,6 +204,52 @@ describe('面（face）维度：与四协议正交，两张词表互不重叠', 
     expect(fingerprint(opus)).toMatchSnapshot('opus');
     expect(fingerprint(gpt)).toMatchSnapshot('gpt-5.6-sol');
     expect(fingerprint(gem37)).toMatchSnapshot('gemini-3.7-flash');
+  });
+});
+
+describe('openai-decision 面：四协议与面并存（gpt-6-luna）', () => {
+  it('canonFaces(luna) 给出唯一的 openai-decision 面，计数与真实投影对齐', () => {
+    const faces = canonFaces(luna);
+    expect(faces.map((f) => f.face)).toEqual(['openai-decision']);
+    expect(faces[0].canonProtocol).toBe('openai.decisions');
+    // 6 条能力：structured-decision + predicate / choice / score 三题型 + vision + retention-metadata。
+    expect(faces[0].capabilityCount).toBe(6);
+    // 只数顶层 body 字段（model / input / questions / safety_identifier）：`questions[].*`
+    // 这类带 `[]` 的嵌套路径是结构不是可填的参数，answers / usage 是响应侧，都不进面板。
+    expect(faces[0].fieldCount).toBe(4);
+    expect(faces[0].basicGeneration).toBe(null);
+  });
+
+  it('canonProtocols(luna) 仍只给它的三个对话协议 —— 面不漏进四协议视图', () => {
+    // 消费端（inferera-web 详情页、playground）靠 canonProtocols 出对话协议 tab；面漏进来
+    // 就会拿一个它不认识的 proto 去查 Record<CodeProto, X>。
+    expect(canonProtocols(luna).map((v) => v.proto).sort()).toEqual(['chat', 'messages', 'responses']);
+  });
+
+  it('canonParams(luna, "openai-decision") 恰好 4 行顶层 body 字段', () => {
+    const ps = canonParams(luna, 'openai-decision');
+    // 顺序跟 canon 的 domain 顺序：service 域（retention-metadata）排在 media-generation 域之前。
+    expect(ps.map((p) => p.path)).toEqual(['safety_identifier', 'model', 'input', 'questions']);
+    // 公网投影不带 aihubmix 轴 → unverified（可选 + 标注），与 jev 同口径。
+    for (const p of ps) {
+      expect(p.verdict, p.path).toBe('unverified');
+      expect(p.selectable, p.path).toBe(true);
+    }
+  });
+
+  it('两个 decision 面互不串味：按 FaceId 取参数只命中自己那一面', () => {
+    expect(canonParams(luna, 'decision')).toEqual([]);
+    expect(canonParams(jev, 'openai-decision')).toEqual([]);
+    expect(canonFaces(jev).map((f) => f.face)).toEqual(['decision']);
+  });
+
+  it('加面前后 luna 的四协议取数逐字不变', () => {
+    // 落盘前拿 0.2.0（尚不认识 openai.decisions 的那版 faces.ts）对同一份 fixture 算了一遍，
+    // 逐字相同才留下的 —— 证明加一条面映射没有扰动这个模型的对话协议面板。
+    const fingerprint = canonProtocols(luna)
+      .map((v) => `${v.proto}:${v.capabilityCount}:${v.fieldCount}:${canonParams(luna, v.proto).map((p) => p.path).join(',')}`)
+      .sort();
+    expect(fingerprint).toMatchSnapshot('gpt-6-luna');
   });
 });
 

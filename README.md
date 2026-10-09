@@ -60,6 +60,18 @@ canonParams(jevDoc, 'decision');   // the 6 body params of the decision face
 
 `canonProtocols()` deliberately keeps returning only the four protocols, so consumers that key a `Record<CodeProto, X>` off its result (protocol → route, protocol → panel kind) keep working and cannot be handed an id they do not know. A model with no protocol view is a model with no chat-shaped schema — which is exactly what `jev` is. Adding a face touches `src/faces.ts` only; never add one to `PROTO_TO_CANON`.
 
+Since 0.3.0 there is a second face, `'openai-decision'` → `openai.decisions` (OpenAI Decisions, `POST /v1/decisions`). Its knowledge-base modality is also `decision`, but `'decision'` was already taken by the TypeSafe face, so the new id carries a vendor prefix — matching `@aihubmix/codegen`'s `generateOpenAIDecisionCode()` (0.4.0+). The two faces have different request bodies; dispatch on `FaceId`, never treat one as the other.
+
+A face can sit **next to** the protocols on the same model. `gpt-6-luna` has chat / responses / messages *and* the `openai.decisions` face, so both calls return something:
+
+```ts
+canonProtocols(lunaDoc).map((v) => v.proto);        // ['chat', 'responses', 'messages'] — the chat-shaped tabs, unchanged
+canonFaces(lunaDoc).map((f) => f.face);             // ['openai-decision']
+canonParams(lunaDoc, 'openai-decision');            // the 4 top-level body params: safety_identifier, model, input, questions
+```
+
+What never overlaps is the *entries*: each knowledge-base protocol id lands in exactly one of the two tables.
+
 ## What this package does not do
 
 - **No I/O.** No network, no filesystem, no env reads. Fetching, caching, and content-addressed paths are the consumer's job — this package knows the knowledge base's *vocabulary*, not its *transport*. It must stay `require()`-able from a bare Node prerender script.

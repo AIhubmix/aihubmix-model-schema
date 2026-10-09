@@ -290,7 +290,8 @@ export function canonProtocols(
  * 与 `canonProtocols()` 同形、同一套计数口径，只是走另一张词表。两者的返回值**互不重叠**：
  * 一个 canon 协议 id 只会落在其中一张表里，所以 jev 这种纯 decision 模型
  * `canonProtocols()` 返回空数组（下游「没有 LLM 形态」的既有判断因此自动成立），
- * 而四协议模型 `canonFaces()` 返回空数组。
+ * 纯四协议模型 `canonFaces()` 返回空数组；gpt-6-luna 这种四协议 + `openai.decisions` 面的
+ * 混合模型两边都非空，各自只含自己那张表的条目。
  */
 export function canonFaces(
   doc: CanonModelDoc | null | undefined,

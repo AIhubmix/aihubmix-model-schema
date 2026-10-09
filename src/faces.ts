@@ -10,12 +10,23 @@ import type { CodeProto } from '@aihubmix/codegen';
  * （`POST /v1/systemone`，请求体 `{model, state, questions}`，返回类型化答案而非文本流）。
  * 它与 chat/responses/messages/gemini **不是同一维度上的第五个取值** —— 那四个是「同一件事
  * （生成文本）的四种协议写法」，互为替代；decision 是另一件事，没有替代关系。
+ * `openai.decisions`（OpenAI Decisions，`POST /v1/decisions`，请求体
+ * `{model, input, questions[]}`，答案按提问顺序回数组）是同一类事的另一个端点。
  *
  * 所以面是与 `CodeProto` **正交的第二维度**。「面」这个词取自 canon 的 `endpoints[].face`，
  * 但注意两边存的**不是同一层的 id**：canon 的 `face` 存的是 canon 协议 id
  * （`"typesafe.systemone"`），本包的 `FaceId` 是它的短 id（`'decision'`，取自同条 endpoint 的
  * `modality`）—— 与 `CodeProto` 的 `'chat'` ↔ `'openai.chat_completions'` 完全同构。
  * 短 id 归代码、长 id 归知识库，这条分界和 `protocols.ts` 是同一条。
+ *
+ * 短 id 撞名时加厂商前缀：`openai.decisions` 的 modality 也是 `decision`，而 `'decision'`
+ * 已经是 TypeSafe 那一面的公开 id（0.2.0 起消费端在用），改名就是破坏性变更，所以新面叫
+ * `'openai-decision'`（与 codegen 的入口 `generateOpenAIDecisionCode` 同名）。两个面的 body
+ * 形状不同，codegen 各有各的生成入口，消费端按 `FaceId` 分派，不能互相代替。
+ *
+ * 面与四协议可以**同时**挂在一个模型上：gpt-6-luna 既有 chat / responses / messages，又有
+ * `openai.decisions` 面，`canonProtocols()` 与 `canonFaces()` 两边都非空。互不重叠的是
+ * **条目**（一个 canon 协议 id 只落在一张表里），不是模型。
  *
  * ## 为什么不能把 `'decision'` 塞进 `CodeProto`
  *
@@ -31,10 +42,11 @@ import type { CodeProto } from '@aihubmix/codegen';
  * 表驱动的，不认识具体的面。**不要**同时往 `PROTO_TO_CANON` 里加 —— 那会让
  * `canonProtocols()` 开始吐新面，正是上面那条要防的事。
  */
-export type FaceId = 'decision';
+export type FaceId = 'decision' | 'openai-decision';
 
 export const FACE_TO_CANON: Record<FaceId, string> = {
   decision: 'typesafe.systemone',
+  'openai-decision': 'openai.decisions',
 };
 
 /** canon 协议 id → 面 id（`FACE_TO_CANON` 的反表，自动导出，不手写第二份）。 */
